@@ -29,6 +29,7 @@ Time Series Analysis에 있어서 Time Series Forecasting은 시계열 분석에
 > CI 전략(Channel Independance)은 단변량 시계열 데이터를 미래 시계열 값으로 매핑하는 함수를 식별하는 방법이다. CD 전략(Channel Dependance)은 다변량 시계열 데이터를 미래 시계열 값으로 매핑한다. 현재 대부분의 SOTA(Sate-of-the-Art) LTSF 모델들은 위와 같은 CI 전략을 채택하고 있으며 이번에 다룬 PatchTST 모델도 채널 독립 방식을 따르고 있다. PatchTST 뿐만 아니라 DLinear등 현재 강력한 시계열 예측 모델은 모두 다변량 시계열 데이터를 분리하여 단변량(Channel Indepence)으로 예측하는데 사용하고 있다. 직관적으로 MTS(Multivariate Time Series)의 모든 과거 변수를 사용하여 동시에 모든 미래 변수를 예측하는 것이 적합해 보일 수 있다. CD방식은 CI방식의 단변량처리와 다르게 변수 간의 상호 관계를 포착하기 때문이다. 그러나 최근 연구에 따르면 채널 독립(CI) 전략이 채널 연관(CD)접근법을 능가한다는 것이 입증되었다.(The Capacity and Robustness Trade-off: Revisiting the ChannelIndependent Strategy for Multivariate Time Series Forecasting. 2023). 해당 논문에서는 다변량 데이터의 접근법에 상관관계인 ACF-Value를 도입하여 왜 CI 방법이 Distribution Shift에 강건한지 설명하고 있다.
 
 ## 1.3 PatchTST Architecture
+<img src="/image/image_1.jpg" width="40%" height="30%" title="px(픽셀) 크기 설정" alt="RubberDuck"></img>
 > 그림 (a)는 PatchTST를 구성하는 전체 아키텍처에 대한 그림이다. 초기에 Multivariate Input Sequence를 Channel-Independence하게 분리하여 Univariate로 만들고, 이를 Transformer Backbone에 입력한다. 모델은 Backbone내에서 각각의 Univarite를 Patching하고, Transformer Encoder를 거치며 데이터를 학습한다. 이를 통해 출력된 Output은 Look-back Window Size (L)만큼을 학습하여 예측된 미래의 T만큼의 결과이다.
 
 # 2. Related Work
@@ -41,9 +42,21 @@ Time Series Analysis에 있어서 Time Series Forecasting은 시계열 분석에
 
 # 3. Proposed Method
 >  PatchTST의 성능 개선을 위해 시도했던 3가지의 방법에 대해 설명한다.
+자세한 설명은 추후 블로그에 추가하겠음.
 
 ## 3.1 Decomposing Signal Using Moving Average 
+- PatchTST 성능 개선을 위한 첫번째 방법으로, 이동평균을 이용한 시계열 분해 기법을 적용한 버전입니다.
+- 원본 데이터에서 이동평균을 이용하여 Trend와 이를 뺀 잔차 데이터를 구합니다.
+- 분해된 Trend 데이터와 잔차 데이터를 독립적인 두개의 모델에 입력해 학습시키고, 해당 출력값을 더해주어 최종 출력값을 완성시킵니다.
 
 ## 3.2 Non stationary Scailing
+- PatchTST 성능 개선을 위한 두번째 방법으로, 입력 데이터의 비정상성 정보를 적용시켜 학습한 버전입니다.
+- 입력데이터가 RevIn으로 Instance Normalization되고, 해당 평균과 표준편차 정보를 기억했다가 출력 레이어에서 de-Normalization을 수행합니다.   
+- 이때 평균과 표준 편차를 별도로 기억했다가 Projector라는 다중 레이어 퍼셉트론을 추가하여    
+  기존 트랜스포머의 멀티헤드 어텐션에서 적용된 스케일링 과정에 새로운 Re-Scaling을 적용하였습니다.
 
 ## 3.3 Fast Furier Transform(FFT) - Top k Decomposition
+- PatchTST 성능 개선을 위한 세번째 방법으로, 입력 데이터의 주요 주파수 데이터와 그 잔차 데이터를 학습한 버전입니다.
+- 원본 데이터를 FFT하여 주요 K개의 주파수만 살린 시그널을 구하고, 이를 원본 데이터에 빼주어 잔차 데이터를 제작합니다.
+- 이렇게 원본 데이터에서 분해된 주요 주파수 데이터, 잔차 데이터를 독립적인 두개의 모델에 입력해 학습시키고,
+  해당 출력값을 더해주어 최종 출력값을 완성시킵니다.
