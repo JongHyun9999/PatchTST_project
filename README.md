@@ -60,8 +60,21 @@ Time Series Analysis에 있어서 Time Series Forecasting은 시계열 분석에
 - 입력데이터가 RevIn으로 Instance Normalization되고, 해당 평균과 표준편차 정보를 기억했다가 출력 레이어에서 de-Normalization을 수행합니다.   
 - 이때 평균과 표준 편차를 별도로 기억했다가 Projector라는 다중 레이어 퍼셉트론을 추가하여    
   기존 트랜스포머의 멀티헤드 어텐션에서 적용된 스케일링 과정에 새로운 Re-Scaling을 적용하였습니다.
-<img src="/image/image_7.png" width="80%" height="40%" alt="참고이미지"></img>    
+<img src="/image/image_7.png" width="80%" height="40%" alt="참고이미지"></img>
+> 정상성은 시계열 데이터가 시점에 따라 평균이나 분산 같은 통계적 특징이 변하지 않으며 추세나 계절성이 없는 시계열 데이터일 때 해당 데이터를 말한다. 
+즉, 시계열 데이터가 시점에 무관하게 과거, 현재, 미래의 분포가 같을 때 정상성을 띤다고 한다.
+반면 비정상성(Non-Stationary) 데이터는 평균이나 분산 같은 통계적 특징이 변하며 추세와 계절성이 내포되어 있는 시계열을 의미한다. 추세와 계절성은
+ 서로 다른 시점에 시계열의 값에 영향을 줄 수 있기 때문에 시간에 따른 데이터의 등락은 이러한 비정상성 데이터의 주요한 요인이라고 할 수 있다.
+
 <img src="/image/image_8.png" width="80%" height="40%" alt="참고이미지"></img>   
+> 기존 PatchTST는 데이터셋 내에서 통계적 특징이 변화하는 비정상성과Distribution Shift를 해결하기 위해 모델 입력 패치에는 Instance Normalization을,
+출력에는 기억했던 평균과 표준편차를 이용하여 Original Distribution으로 되돌리는 Instance DeNormalization를 적용했다.
+
+ 하지만 시계열을 정상화하여 Attention 및 모델의 입력으로 사용한다면 
+모델이 지니고 있는 고유의 비정상성 정보들을 훼손할 수 있다. 따라서 
+이전 방법과 달리 입력 데이터를 정규화 해줌과 동시에, 비정상성 정보들을 
+함께 학습할 수 있도록 하는 De-Stationary 방법을 도입하였다.    
+
 <img src="/image/image_9.png" width="80%" height="40%" alt="참고이미지"></img>   
 
 ### 3.3 Fast Furier Transform(FFT) - Top k Decomposition
