@@ -91,7 +91,7 @@ Time Series Analysis에 있어서 Time Series Forecasting은 시계열 분석에
 
 <img src="/image/image_10.png" width="80%" height="40%" alt="참고이미지"></img>   
 >  Data Augmentation은 학습에 이용되는 데이터에 다양한 증강기법을 적용해 모델이 데이터의 단조로움에 Overfitting 되는 것을 방지하고자 사용한다. 
-시계열 데이터는 Time Domain뿐만 아니라 Frequency Domain에서 시계열 데이터의 증강을 수행할 수도 있는데,실제로 최근 “TimesNet: Temporal 2D-Variation Modeling for General Time Series Analysis, 2023”는 시계열 데이터의 Multi periodicty 특성을 반영하고자 입력 데이터에 Fast Furier Transform(FFT)을 적용한 주파수 도메인에서 증강을 시도해
+시계열 데이터는 Time Domain뿐만 아니라 Frequency Domain에서 시계열 데이터의 증강을 수행할 수도 있는데, 실제로 최근 “TimesNet: Temporal 2D-Variation Modeling for General Time Series Analysis, 2023”는 시계열 데이터의 Multi periodicty 특성을 반영하고자 입력 데이터에 Fast Furier Transform(FFT)을 적용한 주파수 도메인에서 증강을 시도해
 우수한 성능을 확인할 수 있었다.   이처럼 시계열 데이터에도 Frequency Domain에서 접근한다면, 
 데이터의 주요한 정보들을 얻을 수 있음이 다양하게 증명되고 있다. 
 이를 이용한다면 PatchTST의 성능도 개선시킬 수 있을것으로 예상한다. 
@@ -102,5 +102,4 @@ Time Series Analysis에 있어서 Time Series Forecasting은 시계열 분석에
 K개의 주파수만 남은 Frequency Domain의 데이터에서 역푸리에 변환을 적용하였고, 해당 시그널을 오리지널 시퀀스에 빼주어 주요하지 않은, 
 잔차 시그널을 구분하였다.  이렇게 생성된 두개의 시그널을 각각 별도의 PatchTST 모델에 입력해주어 LTSF를 수행하였고, 
 최종 출력값을 더하여 예측값을 완성시켰다.
-![image](https://github.com/JongHyun9999/PatchTST_project/assets/117347262/8e7a08a3-e833-48b7-a720-195b31ebe626)
 
