@@ -29,7 +29,7 @@ Time Series Analysis에 있어서 Time Series Forecasting은 시계열 분석에
 > CI 전략(Channel Independance)은 단변량 시계열 데이터를 미래 시계열 값으로 매핑하는 함수를 식별하는 방법이다. CD 전략(Channel Dependance)은 다변량 시계열 데이터를 미래 시계열 값으로 매핑한다. 현재 대부분의 SOTA(Sate-of-the-Art) LTSF 모델들은 위와 같은 CI 전략을 채택하고 있으며 이번에 다룬 PatchTST 모델도 채널 독립 방식을 따르고 있다. PatchTST 뿐만 아니라 DLinear등 현재 강력한 시계열 예측 모델은 모두 다변량 시계열 데이터를 분리하여 단변량(Channel Indepence)으로 예측하는데 사용하고 있다. 직관적으로 MTS(Multivariate Time Series)의 모든 과거 변수를 사용하여 동시에 모든 미래 변수를 예측하는 것이 적합해 보일 수 있다. CD방식은 CI방식의 단변량처리와 다르게 변수 간의 상호 관계를 포착하기 때문이다. 그러나 최근 연구에 따르면 채널 독립(CI) 전략이 채널 연관(CD)접근법을 능가한다는 것이 입증되었다.(The Capacity and Robustness Trade-off: Revisiting the ChannelIndependent Strategy for Multivariate Time Series Forecasting. 2023). 해당 논문에서는 다변량 데이터의 접근법에 상관관계인 ACF-Value를 도입하여 왜 CI 방법이 Distribution Shift에 강건한지 설명하고 있다.
 
 ## 1.3 PatchTST Architecture
-<img src="/image/image_1.jpg" width="40%" height="30%" title="px(픽셀) 크기 설정" alt="RubberDuck"></img>
+<img src="/image/image_1.png" width="40%" height="30%" alt="참고이미지"></img>
 > 그림 (a)는 PatchTST를 구성하는 전체 아키텍처에 대한 그림이다. 초기에 Multivariate Input Sequence를 Channel-Independence하게 분리하여 Univariate로 만들고, 이를 Transformer Backbone에 입력한다. 모델은 Backbone내에서 각각의 Univarite를 Patching하고, Transformer Encoder를 거치며 데이터를 학습한다. 이를 통해 출력된 Output은 Look-back Window Size (L)만큼을 학습하여 예측된 미래의 T만큼의 결과이다.
 
 # 2. Related Work
