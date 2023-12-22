@@ -1,4 +1,4 @@
-PatchTST_project
+![image](https://github.com/JongHyun9999/PatchTST_project/assets/117347262/0e020e3d-039f-484c-9d15-8422ca514fb7)PatchTST_project
 =============================
 PatchTST 분석 및 개선을 위한 다양한 방법론   
 
@@ -59,28 +59,50 @@ Time Series Analysis에 있어서 Time Series Forecasting은 시계열 분석에
 - PatchTST 성능 개선을 위한 두번째 방법으로, 입력 데이터의 비정상성 정보를 적용시켜 학습한 버전입니다.
 - 입력데이터가 RevIn으로 Instance Normalization되고, 해당 평균과 표준편차 정보를 기억했다가 출력 레이어에서 de-Normalization을 수행합니다.   
 - 이때 평균과 표준 편차를 별도로 기억했다가 Projector라는 다중 레이어 퍼셉트론을 추가하여    
-  기존 트랜스포머의 멀티헤드 어텐션에서 적용된 스케일링 과정에 새로운 Re-Scaling을 적용하였습니다.
-<img src="/image/image_7.png" width="80%" height="40%" alt="참고이미지"></img>
+  기존 트랜스포머의 멀티헤드 어텐션에서 적용된 스케일링 과정에 새로운 Re-Scaling을 적용하였습니다.   
+
+<img src="/image/image_7.png" width="80%" height="40%" alt="참고이미지"></img>   
 > 정상성은 시계열 데이터가 시점에 따라 평균이나 분산 같은 통계적 특징이 변하지 않으며 추세나 계절성이 없는 시계열 데이터일 때 해당 데이터를 말한다. 
 즉, 시계열 데이터가 시점에 무관하게 과거, 현재, 미래의 분포가 같을 때 정상성을 띤다고 한다.
 반면 비정상성(Non-Stationary) 데이터는 평균이나 분산 같은 통계적 특징이 변하며 추세와 계절성이 내포되어 있는 시계열을 의미한다. 추세와 계절성은
- 서로 다른 시점에 시계열의 값에 영향을 줄 수 있기 때문에 시간에 따른 데이터의 등락은 이러한 비정상성 데이터의 주요한 요인이라고 할 수 있다.
+ 서로 다른 시점에 시계열의 값에 영향을 줄 수 있기 때문에 시간에 따른 데이터의 등락은 이러한 비정상성 데이터의 주요한 요인이라고 할 수 있다.   
 
-<img src="/image/image_8.png" width="80%" height="40%" alt="참고이미지"></img>   
+<img src="/image/image_8.png" width="80%" height="40%" alt="참고이미지"></img>    
 > 기존 PatchTST는 데이터셋 내에서 통계적 특징이 변화하는 비정상성과Distribution Shift를 해결하기 위해 모델 입력 패치에는 Instance Normalization을,
 출력에는 기억했던 평균과 표준편차를 이용하여 Original Distribution으로 되돌리는 Instance DeNormalization를 적용했다.
-
- 하지만 시계열을 정상화하여 Attention 및 모델의 입력으로 사용한다면 
+하지만 시계열을 정상화하여 Attention 및 모델의 입력으로 사용한다면 
 모델이 지니고 있는 고유의 비정상성 정보들을 훼손할 수 있다. 따라서 
 이전 방법과 달리 입력 데이터를 정규화 해줌과 동시에, 비정상성 정보들을 
 함께 학습할 수 있도록 하는 De-Stationary 방법을 도입하였다.    
 
 <img src="/image/image_9.png" width="80%" height="40%" alt="참고이미지"></img>   
+>  기존 트랜스포머 인코더의 멀티 헤드 어텐션에서, 쿼리, 키 연산 이후 
+소프트맥스 함수에 입력하기 전 Scailing을 진행했었다. 이때 과도한 정상성을 막고, 
+비정상성 정보를 더해주기 위해 새로운 파라미터 τ와 δ를 추가한다. 이때 언급했던 
+새로운 파라미터는 입력 데이터의 평균과 표준편차를 입력받는 다층 퍼셉트론(MLP)의 출력값이다. 
+해당 파라미터를 query-key scailing 연산에서 적용해주어 스케일링 
+과정중 Over Stationary를 방지하고 Non-Stationary Information이 함께 적용된 
+예측을 수행하였다.   
+
 
 ### 3.3 Fast Furier Transform(FFT) - Top k Decomposition
 - PatchTST 성능 개선을 위한 세번째 방법으로, 입력 데이터의 주요 주파수 데이터와 그 잔차 데이터를 학습한 버전입니다.
 - 원본 데이터를 FFT하여 주요 K개의 주파수만 살린 시그널을 구하고, 이를 원본 데이터에 빼주어 잔차 데이터를 제작합니다.
 - 이렇게 원본 데이터에서 분해된 주요 주파수 데이터, 잔차 데이터를 독립적인 두개의 모델에 입력해 학습시키고,
-  해당 출력값을 더해주어 최종 출력값을 완성시킵니다.
+  해당 출력값을 더해주어 최종 출력값을 완성시킵니다.   
+
 <img src="/image/image_10.png" width="80%" height="40%" alt="참고이미지"></img>   
+>  Data Augmentation은 학습에 이용되는 데이터에 다양한 증강기법을 적용해 모델이 데이터의 단조로움에 Overfitting 되는 것을 방지하고자 사용한다. 
+시계열 데이터는 Time Domain뿐만 아니라 Frequency Domain에서 시계열 데이터의 증강을 수행할 수도 있는데,실제로 최근 “TimesNet: Temporal 2D-Variation Modeling for General Time Series Analysis, 2023”는 시계열 데이터의 Multi periodicty 특성을 반영하고자 입력 데이터에 Fast Furier Transform(FFT)을 적용한 주파수 도메인에서 증강을 시도해
+우수한 성능을 확인할 수 있었다.   이처럼 시계열 데이터에도 Frequency Domain에서 접근한다면, 
+데이터의 주요한 정보들을 얻을 수 있음이 다양하게 증명되고 있다. 
+이를 이용한다면 PatchTST의 성능도 개선시킬 수 있을것으로 예상한다. 
+
 <img src="/image/image_11.png" width="80%" height="40%" alt="참고이미지"></img>   
+> 이에 실험에서 사용한 방법은 입력 시퀀스에 FFT를 적용하여 Frequency Domain에서 Amplitude가 가장 높은
+주파수 K개가 해당 시퀀스의 주요한 데이터라고 판단하여 나머지 주파수를 0으로 제거하는 필터링 작업을 거쳤다. 
+K개의 주파수만 남은 Frequency Domain의 데이터에서 역푸리에 변환을 적용하였고, 해당 시그널을 오리지널 시퀀스에 빼주어 주요하지 않은, 
+잔차 시그널을 구분하였다.  이렇게 생성된 두개의 시그널을 각각 별도의 PatchTST 모델에 입력해주어 LTSF를 수행하였고, 
+최종 출력값을 더하여 예측값을 완성시켰다.
+![image](https://github.com/JongHyun9999/PatchTST_project/assets/117347262/8e7a08a3-e833-48b7-a720-195b31ebe626)
+
