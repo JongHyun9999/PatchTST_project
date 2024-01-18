@@ -6,11 +6,30 @@ import torch
 from torch import nn
 from torch import Tensor
 import torch.nn.functional as F
+import torch.fft
 import numpy as np
 
 from layers.PatchTST_backbone import PatchTST_backbone
 from layers.PatchTST_layers import series_decomp
 
+
+def FFT_for_Period(x, k=5):
+    # [B, T, C]
+    xf = torch.fft.rfft(x, dim=1)
+    # find period by amplitudes
+    frequency_list = abs(xf).mean(0).mean(-1)
+    frequency_list[0] = 0
+
+    top_value, top_list = torch.topk(frequency_list, k)
+    
+    fft_result_filtered = torch.zeros_like(xf)
+    for i in range(len(top_list)):
+        fft_result_filtered[:, top_list[i], :] = top_value[i]
+    
+    # 역 FFT 수행
+    signal_filtered = torch.fft.irfft(fft_result_filtered, dim=1)
+
+    return signal_filtered
 
 class Model(nn.Module):
     def __init__(self, configs, max_seq_len:Optional[int]=1024, d_k:Optional[int]=None, d_v:Optional[int]=None, norm:str='BatchNorm', attn_dropout:float=0., 
@@ -79,17 +98,19 @@ class Model(nn.Module):
     
     def forward(self, x):           # x: [Batch, Input length, Channel]
         if self.decomposition:
-            res_init, trend_init = self.decomp_module(x)
-            res_init, trend_init = res_init.permute(0,2,1), trend_init.permute(0,2,1)  # x: [Batch, Channel, Input length]
+            # FFT 변환 후, k개의 amplitude에 대한 주기 계산.
+            trend_init = FFT_for_Period(x)
+            res_init = x - trend_init
+            trend_init = trend_init.permute(0,2,1)
+            res_init = res_init.permute(0,2,1)
+            # res_init, trend_init = self.decomp_module(x)
+            # res_init, trend_init = res_init.permute(0,2,1), trend_init.permute(0,2,1)  # x: [Batch, Channel, Input length]
             res = self.model_res(res_init)
             trend = self.model_trend(trend_init)
             x = res + trend
             x = x.permute(0,2,1)    # x: [Batch, Input length, Channel]
         else:
             x = x.permute(0,2,1)    # x: [Batch, Channel, Input length]
-            
-            # model에 data를 넣어 inference 진행
             x = self.model(x)
-            
             x = x.permute(0,2,1)    # x: [Batch, Input length, Channel]
         return x

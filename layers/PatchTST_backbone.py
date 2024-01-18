@@ -57,9 +57,6 @@ class PatchTST_backbone(nn.Module):
             self.head = Flatten_Head(self.individual, self.n_vars, self.head_nf, target_window, head_dropout=head_dropout)
         
     
-    # z : batch size x nvars(number of variables) x L(sequence length)
-    # => 뭐야... 일단 데이터 한 번에 다 넘겨주네?
-    # 넘겨주고 나서 나중에 patching으로 잘라서 하는 것인가?
     def forward(self, z):                                                                   # z: [bs x nvars x seq_len]
         # norm
         if self.revin: 
@@ -70,11 +67,7 @@ class PatchTST_backbone(nn.Module):
         # do patching
         if self.padding_patch == 'end':
             z = self.padding_patch_layer(z)
-        
-        # (bs, 7, N, P)
         z = z.unfold(dimension=-1, size=self.patch_len, step=self.stride)                   # z: [bs x nvars x patch_num x patch_len]
-        
-        # (bs, 7, P, N)
         z = z.permute(0,1,3,2)                                                              # z: [bs x nvars x patch_len x patch_num]
         
         # model
@@ -147,11 +140,6 @@ class TSTiEncoder(nn.Module):  #i means channel-independent
         
         # Input encoding
         q_len = patch_num
-        
-        # Patch Sequence X(p)[i]에
-        # trainable linear projection Wp와
-        # Learnable Position Encoding W_pos를 적용하여
-        # 시간 순서를 반영한 Patch Embedding을 생성할 수 있다.
         self.W_P = nn.Linear(patch_len, d_model)        # Eq 1: projection of feature vectors onto a d-dim vector space
         self.seq_len = q_len
 
@@ -165,22 +153,14 @@ class TSTiEncoder(nn.Module):  #i means channel-independent
         self.encoder = TSTEncoder(q_len, d_model, n_heads, d_k=d_k, d_v=d_v, d_ff=d_ff, norm=norm, attn_dropout=attn_dropout, dropout=dropout,
                                    pre_norm=pre_norm, activation=act, res_attention=res_attention, n_layers=n_layers, store_attn=store_attn)
 
-    # patch_len : P
-    # patch_num : N
-    # bs : batch size
+        
     def forward(self, x) -> Tensor:                                              # x: [bs x nvars x patch_len x patch_num]
         
-        # variable의 개수. multivariate이므로 7!
         n_vars = x.shape[1]
-        
         # Input encoding
         x = x.permute(0,1,3,2)                                                   # x: [bs x nvars x patch_num x patch_len]
-        
-        # multivariate 전체에 대해서 Transformer에 넣을 수 있도록
-        # d_model 차원으로 projection 함.
         x = self.W_P(x)                                                          # x: [bs x nvars x patch_num x d_model]
 
-        # Reshape 진행.
         u = torch.reshape(x, (x.shape[0]*x.shape[1],x.shape[2],x.shape[3]))      # u: [bs * nvars x patch_num x d_model]
         u = self.dropout(u + self.W_pos)                                         # u: [bs * nvars x patch_num x d_model]
 
@@ -311,7 +291,7 @@ class _MultiheadAttention(nn.Module):
         self.res_attention = res_attention
         self.sdp_attn = _ScaledDotProductAttention(d_model, n_heads, attn_dropout=attn_dropout, res_attention=self.res_attention, lsa=lsa)
 
-        # Project output
+        # Poject output
         self.to_out = nn.Sequential(nn.Linear(n_heads * d_v, d_model), nn.Dropout(proj_dropout))
 
 
