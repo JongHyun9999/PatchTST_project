@@ -21,37 +21,58 @@ def get_activation_fn(activation):
     
     
 # decomposition
-
 class moving_avg(nn.Module):
     """
     Moving average block to highlight the trend of time series
     """
+    
+    # kernel_size : 이동 평균을 계산할 때 사용되는 윈도우 크기를 정의
+    # stride : 이동 평균 계산 시의 Stride(간격)을 정의
     def __init__(self, kernel_size, stride):
         super(moving_avg, self).__init__()
         self.kernel_size = kernel_size
+        
+        # nn.AvgPool1d를 이용하여 1차원 평균 풀링을 구현한다. 이동 평균 계산에 사용된다.
         self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=stride, padding=0)
 
     def forward(self, x):
-        # padding on the both ends of time series
+        # front와 end는 필터를 적용함에 따라 감소하는 데이터의 양을
+        # 채우기 위한 Padding의 역할이다.
         front = x[:, 0:1, :].repeat(1, (self.kernel_size - 1) // 2, 1)
         end = x[:, -1:, :].repeat(1, (self.kernel_size - 1) // 2, 1)
+        
+        # 만들어진 Padding과 원래 데이터를 결합한다.
         x = torch.cat([front, x, end], dim=1)
+        
+        # Signal의 차원을 변환하고, nn.AvgPool1d를 이용하여
+        # avg를 계산한다.
         x = self.avg(x.permute(0, 2, 1))
+        
+        # 차원을 원래대로 변환하여 Avg를 구한다.
         x = x.permute(0, 2, 1)
+        
         return x
 
 
 class series_decomp(nn.Module):
     """
-    Series decomposition block
+        Time Series Data에 대해서 
+        Moving Average Decomposition을 
+        수행하기 위한 Class 선언
     """
     def __init__(self, kernel_size):
         super(series_decomp, self).__init__()
         self.moving_avg = moving_avg(kernel_size, stride=1)
 
     def forward(self, x):
+        # moving mean : nn.Module로 선언된 moving_avg를 호출하고, 
+        # 입력 데이터의 이동 평균을 계산한다. 
         moving_mean = self.moving_avg(x)
+        
+        # 원래 데이터에서 이동 평균을 빼서 잔차를 구한다.
         res = x - moving_mean
+        
+        # 잔차와 이동 평균을 반환한다.
         return res, moving_mean
     
     

@@ -87,6 +87,9 @@ class Model(nn.Module):
             x = x.permute(0,2,1)    # x: [Batch, Input length, Channel]
         else:
             x = x.permute(0,2,1)    # x: [Batch, Channel, Input length]
+            
+            # model에 data를 넣어 inference 진행
             x = self.model(x)
+            
             x = x.permute(0,2,1)    # x: [Batch, Input length, Channel]
         return x

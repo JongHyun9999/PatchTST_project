@@ -31,16 +31,22 @@ def data_provider(args, flag):
         batch_size = args.batch_size
         freq = args.freq
 
+    # Data는 지정된 Data Set의 Class이다.
+    # 
     data_set = Data(
         root_path=args.root_path,
         data_path=args.data_path,
         flag=flag,
+        # siq_len : input sequence length (96)
+        # label_len : start token length (48)
+        # pred_len : prediction sequence length (96)
         size=[args.seq_len, args.label_len, args.pred_len],
         features=args.features,
         target=args.target,
         timeenc=timeenc,
         freq=freq
     )
+    
     print(flag, len(data_set))
     data_loader = DataLoader(
         data_set,
