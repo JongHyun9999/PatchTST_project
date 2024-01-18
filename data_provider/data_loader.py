@@ -45,7 +45,6 @@ class Dataset_ETT_hour(Dataset):
         df_raw = pd.read_csv(os.path.join(self.root_path,
                                           self.data_path))
 
-        # train/test/val에 대해서 각각 border를 지정.
         border1s = [0, 12 * 30 * 24 - self.seq_len, 12 * 30 * 24 + 4 * 30 * 24 - self.seq_len]
         border2s = [12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
         border1 = border1s[self.set_type]
@@ -57,8 +56,6 @@ class Dataset_ETT_hour(Dataset):
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
 
-        # scale은 항상 True이다. 따라서 항상 Scaling을 하는 것으로 볼 수 있음.
-        # 그냥 항상 Gaussian Distribution으로 Normalize하는 것이라고 생각하면 된다.
         if self.scale:
             train_data = df_data[border1s[0]:border2s[0]]
             self.scaler.fit(train_data.values)

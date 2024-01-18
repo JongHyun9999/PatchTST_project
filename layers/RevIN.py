@@ -49,7 +49,7 @@ class RevIN(nn.Module):
         if self.affine:
             x = x * self.affine_weight
             x = x + self.affine_bias
-        return x
+        return x, self.mean, self.stdev
 
     def _denormalize(self, x):
         if self.affine:

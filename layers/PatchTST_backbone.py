@@ -12,9 +12,43 @@ import numpy as np
 from layers.PatchTST_layers import *
 from layers.RevIN import RevIN
 
+
+class Projector(nn.Module):
+    '''
+    MLP to learn the De-stationary factors
+    '''
+    def __init__(self, enc_in, seq_len, hidden_dims, hidden_layers, output_dim, kernel_size=3):
+        super(Projector, self).__init__()
+
+        padding = 1 if torch.__version__ >= '1.5.0' else 2
+        self.series_conv = nn.Conv1d(in_channels=seq_len, out_channels=1, kernel_size=kernel_size, padding=padding, padding_mode='circular', bias=False)
+
+        layers = [nn.Linear(2 * enc_in, hidden_dims[0]), nn.ReLU()]
+        for i in range(hidden_layers-1):
+            layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.ReLU()]
+        
+        layers += [nn.Linear(hidden_dims[-1], output_dim, bias=False)]
+        self.backbone = nn.Sequential(*layers)
+
+    def forward(self, x, stats):
+        # x:     B x S x E
+        # stats: B x 1 x E
+        # y:     B x O
+        batch_size = x.shape[0]
+
+        # 컨벌루션 전에 입력 시퀀스와 컨벌루션 입력 피처수 맞춰주기
+        x=x.permute(0,2,1)
+        x = self.series_conv(x)          # B x 1 x E
+        x = torch.cat([x, stats], dim=1) # B x 2 x E
+        x = x.view(batch_size, -1) # B x 2E
+        y = self.backbone(x)       # B x O
+
+        return y
+
+
 # Cell
 class PatchTST_backbone(nn.Module):
-    def __init__(self, c_in:int, context_window:int, target_window:int, patch_len:int, stride:int, max_seq_len:Optional[int]=1024, 
+    def __init__(self, configs, c_in:int, context_window:int, target_window:int, patch_len:int, stride:int, max_seq_len:Optional[int]=1024, 
                  n_layers:int=3, d_model=128, n_heads=16, d_k:Optional[int]=None, d_v:Optional[int]=None,
                  d_ff:int=256, norm:str='BatchNorm', attn_dropout:float=0., dropout:float=0., act:str="gelu", key_padding_mask:bool='auto',
                  padding_var:Optional[int]=None, attn_mask:Optional[Tensor]=None, res_attention:bool=True, pre_norm:bool=False, store_attn:bool=False,
@@ -37,6 +71,11 @@ class PatchTST_backbone(nn.Module):
             self.padding_patch_layer = nn.ReplicationPad1d((0, stride)) 
             patch_num += 1
         
+        
+        # Non-Stationary 적용을 위한 타우, 델타 신경망 생성
+        self.tau_learner   = Projector(enc_in=configs.enc_in, seq_len=configs.seq_len, hidden_dims=[128, 128], hidden_layers=2, output_dim=1)
+        self.delta_learner = Projector(enc_in=configs.enc_in, seq_len=configs.seq_len, hidden_dims=[128, 128], hidden_layers=2, output_dim=patch_num)
+
         # Backbone 
         self.backbone = TSTiEncoder(c_in, patch_num=patch_num, patch_len=patch_len, max_seq_len=max_seq_len,
                                 n_layers=n_layers, d_model=d_model, n_heads=n_heads, d_k=d_k, d_v=d_v, d_ff=d_ff,
@@ -57,28 +96,35 @@ class PatchTST_backbone(nn.Module):
             self.head = Flatten_Head(self.individual, self.n_vars, self.head_nf, target_window, head_dropout=head_dropout)
         
     
-    # z : batch size x nvars(number of variables) x L(sequence length)
-    # => 뭐야... 일단 데이터 한 번에 다 넘겨주네?
-    # 넘겨주고 나서 나중에 patching으로 잘라서 하는 것인가?
     def forward(self, z):                                                                   # z: [bs x nvars x seq_len]
         # norm
         if self.revin: 
             z = z.permute(0,2,1)
-            z = self.revin_layer(z, 'norm')
+            z, z_mean, z_std = self.revin_layer(z, 'norm')
             z = z.permute(0,2,1)
-            
+        z_raw = z.clone().detach()
+        
+        
+        # # Normalization
+        # z_raw = z.clone().detach()
+        # z_mean = z.mean(1, keepdim=True).detach() # B x 1 x E
+        # z = z - z_mean
+        # z_std = torch.sqrt(torch.var(z, dim=1, keepdim=True, unbiased=False) + 1e-5).detach() # B x 1 x E
+        # z = z / z_std
+
+        tau = self.tau_learner(z_raw, z_std).exp()     # B x S x E, B x 1 x E -> B x 1, positive scalar    
+        delta = self.delta_learner(z_raw, z_mean)      # B x S x E, B x 1 x E -> B x S
+        # tau의 크기는 B X 1
+        # delta의 크기는 B X seq_len
+
         # do patching
         if self.padding_patch == 'end':
             z = self.padding_patch_layer(z)
-        
-        # (bs, 7, N, P)
         z = z.unfold(dimension=-1, size=self.patch_len, step=self.stride)                   # z: [bs x nvars x patch_num x patch_len]
-        
-        # (bs, 7, P, N)
         z = z.permute(0,1,3,2)                                                              # z: [bs x nvars x patch_len x patch_num]
         
         # model
-        z = self.backbone(z)                                                                # z: [bs x nvars x d_model x patch_num]
+        z = self.backbone(z, tau, delta)                                                                # z: [bs x nvars x d_model x patch_num]
         z = self.head(z)                                                                    # z: [bs x nvars x target_window] 
         
         # denorm
@@ -147,11 +193,6 @@ class TSTiEncoder(nn.Module):  #i means channel-independent
         
         # Input encoding
         q_len = patch_num
-        
-        # Patch Sequence X(p)[i]에
-        # trainable linear projection Wp와
-        # Learnable Position Encoding W_pos를 적용하여
-        # 시간 순서를 반영한 Patch Embedding을 생성할 수 있다.
         self.W_P = nn.Linear(patch_len, d_model)        # Eq 1: projection of feature vectors onto a d-dim vector space
         self.seq_len = q_len
 
@@ -165,27 +206,19 @@ class TSTiEncoder(nn.Module):  #i means channel-independent
         self.encoder = TSTEncoder(q_len, d_model, n_heads, d_k=d_k, d_v=d_v, d_ff=d_ff, norm=norm, attn_dropout=attn_dropout, dropout=dropout,
                                    pre_norm=pre_norm, activation=act, res_attention=res_attention, n_layers=n_layers, store_attn=store_attn)
 
-    # patch_len : P
-    # patch_num : N
-    # bs : batch size
-    def forward(self, x) -> Tensor:                                              # x: [bs x nvars x patch_len x patch_num]
         
-        # variable의 개수. multivariate이므로 7!
+    def forward(self, x, tau, delta) -> Tensor:                                              # x: [bs x nvars x patch_len x patch_num]
+        
         n_vars = x.shape[1]
-        
         # Input encoding
         x = x.permute(0,1,3,2)                                                   # x: [bs x nvars x patch_num x patch_len]
-        
-        # multivariate 전체에 대해서 Transformer에 넣을 수 있도록
-        # d_model 차원으로 projection 함.
         x = self.W_P(x)                                                          # x: [bs x nvars x patch_num x d_model]
 
-        # Reshape 진행.
         u = torch.reshape(x, (x.shape[0]*x.shape[1],x.shape[2],x.shape[3]))      # u: [bs * nvars x patch_num x d_model]
         u = self.dropout(u + self.W_pos)                                         # u: [bs * nvars x patch_num x d_model]
 
         # Encoder
-        z = self.encoder(u)                                                      # z: [bs * nvars x patch_num x d_model]
+        z = self.encoder(u, tau, delta)                                                      # z: [bs * nvars x patch_num x d_model]
         z = torch.reshape(z, (-1,n_vars,z.shape[-2],z.shape[-1]))                # z: [bs x nvars x patch_num x d_model]
         z = z.permute(0,1,3,2)                                                   # z: [bs x nvars x d_model x patch_num]
         
@@ -206,14 +239,14 @@ class TSTEncoder(nn.Module):
                                                       pre_norm=pre_norm, store_attn=store_attn) for i in range(n_layers)])
         self.res_attention = res_attention
 
-    def forward(self, src:Tensor, key_padding_mask:Optional[Tensor]=None, attn_mask:Optional[Tensor]=None):
+    def forward(self, src:Tensor, tau, delta, key_padding_mask:Optional[Tensor]=None, attn_mask:Optional[Tensor]=None):
         output = src
         scores = None
         if self.res_attention:
-            for mod in self.layers: output, scores = mod(output, prev=scores, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
+            for mod in self.layers: output, scores = mod(output, tau, delta, prev=scores, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
             return output
         else:
-            for mod in self.layers: output = mod(output, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
+            for mod in self.layers: output = mod(output, tau, delta, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
             return output
 
 
@@ -254,16 +287,16 @@ class TSTEncoderLayer(nn.Module):
         self.store_attn = store_attn
 
 
-    def forward(self, src:Tensor, prev:Optional[Tensor]=None, key_padding_mask:Optional[Tensor]=None, attn_mask:Optional[Tensor]=None) -> Tensor:
+    def forward(self, src:Tensor, tau, delta, prev:Optional[Tensor]=None, key_padding_mask:Optional[Tensor]=None, attn_mask:Optional[Tensor]=None) -> Tensor:
 
         # Multi-Head attention sublayer
         if self.pre_norm:
             src = self.norm_attn(src)
         ## Multi-Head attention
         if self.res_attention:
-            src2, attn, scores = self.self_attn(src, src, src, prev, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
+            src2, attn, scores = self.self_attn(tau, delta, src, src, src, prev, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
         else:
-            src2, attn = self.self_attn(src, src, src, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
+            src2, attn = self.self_attn(tau, delta, src, src, src, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
         if self.store_attn:
             self.attn = attn
         ## Add & Norm
@@ -311,11 +344,11 @@ class _MultiheadAttention(nn.Module):
         self.res_attention = res_attention
         self.sdp_attn = _ScaledDotProductAttention(d_model, n_heads, attn_dropout=attn_dropout, res_attention=self.res_attention, lsa=lsa)
 
-        # Project output
+        # Poject output
         self.to_out = nn.Sequential(nn.Linear(n_heads * d_v, d_model), nn.Dropout(proj_dropout))
 
 
-    def forward(self, Q:Tensor, K:Optional[Tensor]=None, V:Optional[Tensor]=None, prev:Optional[Tensor]=None,
+    def forward(self, tau, delta, Q:Tensor, K:Optional[Tensor]=None, V:Optional[Tensor]=None, prev:Optional[Tensor]=None,
                 key_padding_mask:Optional[Tensor]=None, attn_mask:Optional[Tensor]=None):
 
         bs = Q.size(0)
@@ -329,9 +362,9 @@ class _MultiheadAttention(nn.Module):
 
         # Apply Scaled Dot-Product Attention (multiple heads)
         if self.res_attention:
-            output, attn_weights, attn_scores = self.sdp_attn(q_s, k_s, v_s, prev=prev, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
+            output, attn_weights, attn_scores = self.sdp_attn(tau, delta, q_s, k_s, v_s, prev=prev, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
         else:
-            output, attn_weights = self.sdp_attn(q_s, k_s, v_s, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
+            output, attn_weights = self.sdp_attn(tau, delta, q_s, k_s, v_s, key_padding_mask=key_padding_mask, attn_mask=attn_mask)
         # output: [bs x n_heads x q_len x d_v], attn: [bs x n_heads x q_len x q_len], scores: [bs x n_heads x max_q_len x q_len]
 
         # back to the original inputs dimensions
@@ -355,7 +388,7 @@ class _ScaledDotProductAttention(nn.Module):
         self.scale = nn.Parameter(torch.tensor(head_dim ** -0.5), requires_grad=lsa)
         self.lsa = lsa
 
-    def forward(self, q:Tensor, k:Tensor, v:Tensor, prev:Optional[Tensor]=None, key_padding_mask:Optional[Tensor]=None, attn_mask:Optional[Tensor]=None):
+    def forward(self, tau, delta, q:Tensor, k:Tensor, v:Tensor, prev:Optional[Tensor]=None, key_padding_mask:Optional[Tensor]=None, attn_mask:Optional[Tensor]=None):
         '''
         Input shape:
             q               : [bs x n_heads x max_q_len x d_k]
@@ -371,8 +404,25 @@ class _ScaledDotProductAttention(nn.Module):
         '''
 
         # Scaled MatMul (q, k) - similarity scores for all pairs of positions in an input sequence
-        attn_scores = torch.matmul(q, k) * self.scale      # attn_scores : [bs x n_heads x max_q_len x q_len]
+        # 이부분을 수정. 전달받은 tau와 delta를 이용해서 QK값에 새로운 normalization 수행
+        tau = tau.unsqueeze(2).unsqueeze(3)
+        tau = torch.cat([tau for _ in range(q.shape[0]//tau.shape[0])], dim=0)
 
+        delta = delta.unsqueeze(2).unsqueeze(3)
+        delta = torch.cat([delta for _ in range(q.shape[0]//delta.shape[0])], dim=0)
+
+        # 1번 방법
+        delta = delta.permute(0,2,1,3)
+        delta = torch.cat([delta for _ in range(q.shape[1])], dim=1)
+
+        # 2번 방법
+        # delta = delta.reshape((delta.shape[0], q.shape[1], -1, 1))
+        # delta = torch.cat([delta for _ in range(q.shape[1])], dim=1)
+
+        
+        # attn_scores = torch.matmul(q, k) * self.scale      # attn_scores : [bs x n_heads x max_q_len x q_len]
+        attn_scores = (torch.matmul(q, k)*tau + delta) * self.scale
+        
         # Add pre-softmax attention scores from the previous layer (optional)
         if prev is not None: attn_scores = attn_scores + prev
 
@@ -389,6 +439,8 @@ class _ScaledDotProductAttention(nn.Module):
 
         # normalize the attention weights
         attn_weights = F.softmax(attn_scores, dim=-1)                 # attn_weights   : [bs x n_heads x max_q_len x q_len]
+
+
         attn_weights = self.attn_dropout(attn_weights)
 
         # compute the new values given the attention weights
@@ -396,4 +448,3 @@ class _ScaledDotProductAttention(nn.Module):
 
         if self.res_attention: return output, attn_weights, attn_scores
         else: return output, attn_weights
-
