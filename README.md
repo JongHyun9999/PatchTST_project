@@ -1,4 +1,5 @@
 PatchTST 분석 및 개선을 위한 다양한 방법론   
+논문 파일 공유: https://drive.google.com/drive/folders/1K9kcwqxIyx3Hxd9-_mkCeQBhUNH7rOiV
 =============================
 
 PatchTST는 Transformer 모델이 Long-Term Time Series Forecasting(LTSF)에 적합하지 않다는 주장에 반박하기 위하여 연구된 모델이다. (Are Transformers effective for time series forecasting?, 2022) 이는 Transformer를 기반으로 설계된 다변량 시계열 예측 모델로서, 다음 두 가지 핵심 구성 요소에 기반한다. 
