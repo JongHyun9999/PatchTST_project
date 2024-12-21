@@ -1,6 +1,8 @@
 PatchTST 분석 및 개선을 위한 다양한 방법론   
 =============================
 > 논문 파일 공유: https://drive.google.com/drive/folders/1K9kcwqxIyx3Hxd9-_mkCeQBhUNH7rOiV
+
+
 > PPT : https://docs.google.com/presentation/d/11-qMBme_0rF99-cIzUKvdllRJk76n0Re/edit?usp=sharing&ouid=109216185127626877008&rtpof=true&sd=true
 
 
